@@ -1,0 +1,24 @@
+services:
+  app:
+    build: .
+    image: knowledge-inbox:latest
+    ports:
+      - '4000:4000'
+    environment:
+      NODE_ENV: production
+      LOG_LEVEL: info
+      DATABASE_PATH: /data/knowledge-inbox.db
+      # Passed through from your shell or a local .env file. Leave unset to run
+      # in the offline fallback mode.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      CHAT_MODEL: ${CHAT_MODEL:-gpt-4o-mini}
+    volumes:
+      # SQLite must outlive the container, so the database is a named volume
+      # rather than a file inside the image layer.
+      - knowledge-inbox-data:/data
+    restart: unless-stopped
+
+volumes:
+  knowledge-inbox-data:

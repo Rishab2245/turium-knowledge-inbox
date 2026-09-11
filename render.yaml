@@ -1,0 +1,25 @@
+# One-click deploy on Render: the Dockerfile builds both halves and the Node
+# process serves the API and the built frontend from a single origin.
+services:
+  - type: web
+    name: knowledge-inbox
+    runtime: docker
+    plan: starter
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_PATH
+        value: /data/knowledge-inbox.db
+      - key: OPENAI_API_KEY
+        sync: false # set in the dashboard; never committed
+      - key: CHAT_MODEL
+        value: gpt-4o-mini
+      - key: EMBEDDING_MODEL
+        value: text-embedding-3-small
+    disk:
+      # SQLite needs a real disk. Without this the database is wiped on every
+      # deploy, which is the single most common way this stack surprises people.
+      name: knowledge-inbox-data
+      mountPath: /data
+      sizeGB: 1

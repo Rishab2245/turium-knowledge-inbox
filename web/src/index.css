@@ -1,0 +1,23 @@
+@import 'tailwindcss';
+
+/* Tailwind v4 configures itself from CSS. Only genuinely global rules live
+   here; everything else is a utility class on the component that needs it. */
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+}
+
+/* Keyboard focus stays visible everywhere; several controls are icon-sized. */
+:focus-visible {
+  outline: 2px solid var(--color-indigo-500);
+  outline-offset: 2px;
+}
