@@ -64,15 +64,58 @@ npm run typecheck  # strict tsc across both workspaces
 npm run build      # production build of both halves
 ```
 
-### Docker
+---
+
+## Deployment
+
+The app ships as a single container: the frontend is built into the server's
+`public/` directory and served from the same origin, so there is one process, one
+port and no CORS in production.
+
+### Run the published image
+
+Every push to `main` builds, smoke-tests and publishes an image to GitHub
+Container Registry.
+
+```bash
+docker run -p 4000:4000 -v knowledge-inbox-data:/data \
+  -e OPENAI_API_KEY=sk-... \
+  ghcr.io/rishab2245/turium-knowledge-inbox:latest
+```
+
+Then open <http://localhost:4000>. Omit `OPENAI_API_KEY` to run in offline
+fallback mode.
+
+### Build it yourself
 
 ```bash
 docker compose up --build    # http://localhost:4000
 ```
 
-The image builds the frontend into the server's `public/` directory and serves
-both from one Node process. SQLite lives on a named volume, so data survives
-container rebuilds.
+SQLite lives on a named volume, so data survives container rebuilds.
+
+### Host it
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rishab2245/turium-knowledge-inbox)
+
+`render.yaml` provisions the service from the Dockerfile, sets
+`healthCheckPath` to `/api/health` and attaches a 1 GB persistent disk at `/data`.
+Set `OPENAI_API_KEY` in the dashboard after the first deploy.
+
+> **The disk is not optional.** SQLite on a container's ephemeral filesystem is
+> wiped on every deploy. The `disk:` block in `render.yaml` is what stops that,
+> and it is the single most common way this stack surprises people.
+
+The same image runs unchanged on Fly.io, Railway, Cloud Run (with a mounted
+volume) or any Docker host.
+
+### CI
+
+`.github/workflows/ci.yml` typechecks, tests and builds both workspaces, then
+builds the image, runs it, and asserts the real thing works: `/api/health`
+responds, a note ingests and indexes, a query comes back with citations, and the
+SPA is served from the same origin. A green run means the shipped artifact works
+end to end, not just that it compiled.
 
 ---
 
