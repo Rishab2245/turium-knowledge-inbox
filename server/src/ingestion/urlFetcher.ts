@@ -17,6 +17,17 @@ export interface FetchedPage {
 const BLOCKED_TAGS = 'script, style, noscript, svg, iframe, nav, footer, header, aside, form, button, template';
 
 /**
+ * Class and id fragments that mark page furniture rather than content.
+ * Generic rather than site-specific: these names are near-universal, and the
+ * alternative (per-site rules) does not generalise to the next URL someone
+ * saves. Without this, a wiki page contributes its category and "see also"
+ * link lists as text, which then chunk into keyword soup that outranks real
+ * prose on any lexical match.
+ */
+const BOILERPLATE_PATTERN =
+  /(^|[-_ ])(nav|navbar|navbox|menu|sidebar|footer|masthead|breadcrumb|toc|catlinks|categories|related|recirc|share|social|subscribe|newsletter|cookie|consent|banner|promo|advert|ads?|comment|disqus|pagination|skip-link|screen-reader|sr-only|editsection|reflist|references|noprint)([-_ ]|$)/i;
+
+/**
  * Fetches a URL server-side and extracts its readable text.
  *
  * The extraction is intentionally heuristic rather than a full Readability
@@ -88,6 +99,28 @@ export async function fetchPageContent(rawUrl: string): Promise<FetchedPage> {
 export function extractReadableText(html: string, url: URL): { title: string; text: string } {
   const $ = cheerio.load(html);
   $(BLOCKED_TAGS).remove();
+  $('[role="navigation"], [role="banner"], [role="contentinfo"], [role="complementary"], [aria-hidden="true"]').remove();
+
+  // Drop anything whose class or id names it as page furniture.
+  //
+  // Two guards, both learned the hard way. Structural elements are never
+  // furniture no matter what they are labelled: Wikipedia puts feature flags
+  // like `vector-feature-language-in-main-menu` on <html> itself, and matching
+  // that would delete the entire page. And furniture is never most of the
+  // document, so an element holding the bulk of the text is content whatever
+  // its class says.
+  const bodyTextLength = Math.max($('body').text().length, 1);
+
+  $('body [class], body [id]').each((_, element) => {
+    const node = $(element);
+    if (node.is('body, main, article')) return;
+
+    const identifiers = `${node.attr('class') ?? ''} ${node.attr('id') ?? ''}`.trim();
+    if (!identifiers || !BOILERPLATE_PATTERN.test(identifiers)) return;
+    if (node.text().length > bodyTextLength * 0.5) return;
+
+    node.remove();
+  });
 
   const title =
     $('meta[property="og:title"]').attr('content')?.trim() ||

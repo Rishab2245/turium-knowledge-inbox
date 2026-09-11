@@ -59,7 +59,7 @@ CHAT_MODEL=llama-3.3-70b-versatile
 ### Other commands
 
 ```bash
-npm test           # 53 tests, no network and no credentials required
+npm test           # 75 tests, no network and no credentials required
 npm run typecheck  # strict tsc across both workspaces
 npm run build      # production build of both halves
 ```
@@ -311,6 +311,27 @@ disguised feature: the local embedder has no semantic generalisation, so "car" a
 typo tolerance, not synonymy. It exists so the project clones and runs, and so the
 test suite needs no credentials and no network.
 
+### URL extraction: heuristics, not a Readability port
+
+Fetched pages are stripped of scripts, landmark chrome and anything whose class
+or id names it as furniture (`navbox`, `catlinks`, `reflist`, `sidebar`, ...),
+then the densest remaining content container wins. About forty lines instead of a
+jsdom dependency.
+
+Two guards make the class-name rule safe, both found by testing against a real
+page. Structural elements are never removed no matter how they are labelled:
+Wikipedia puts feature flags like `vector-feature-language-in-main-menu` on
+`<html>` itself, and matching that deleted the entire article. And furniture is
+never most of the document, so an element holding over half the page text is
+treated as content whatever its class says.
+
+The effect is measurable: the RAG Wikipedia article went from 32 noisy chunks
+(category lists, navboxes and reference footers included) to 15 chunks of article
+prose.
+
+**Limitation:** client-rendered pages return their empty shell. The app detects
+that and fails the item with a message saying so rather than indexing nothing.
+
 ### SSRF guard on URL ingestion
 
 The server fetches arbitrary user-supplied URLs, so it must refuse to be used as a
@@ -348,7 +369,7 @@ time or route egress through a filtering proxy.
 npm test
 ```
 
-53 tests across five files, all offline:
+75 tests across six files, all offline:
 
 | File | Covers |
 | --- | --- |
@@ -356,6 +377,7 @@ npm test
 | `retrieval.test.ts` | dot product, dimension-mismatch guard, MMR diversity, local embedder determinism and ranking, BLOB round-trip |
 | `answerer.test.ts` | citation reconciliation, hallucinated markers, prompt assembly, extractive fallback |
 | `ingestionQueue.test.ts` | job claiming, retry budget, permanent-failure short-circuit, crash recovery |
+| `urlFetcher.test.ts` | content extraction, boilerplate stripping, title fallbacks, private-address classification |
 | `api.test.ts` | every endpoint end-to-end over the real router, service, queue and schema, with only the providers stubbed |
 
 The API tests run against an in-memory SQLite database with a stub chat provider,
