@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, test and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck both workspaces
+        run: npm run typecheck
+
+      - name: Test
+        # No credentials and no network: the suite stubs the model providers and
+        # runs against an in-memory SQLite database.
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  image:
+    name: Build and publish container image
+    needs: verify
+    runs-on: ubuntu-latest
+    # Only publish from main; pull requests still build the image below to prove
+    # the Dockerfile is not broken, they just do not push it.
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ghcr.io/${{ github.repository }}:latest
+            ghcr.io/${{ github.repository }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: ${{ github.ref != 'refs/heads/main' }}
+
+      - name: Smoke test the built image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker run -d --name inbox -p 4000:4000 ghcr.io/${{ github.repository }}:${{ github.sha }}
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:4000/api/health > /dev/null; then
+              echo "API is healthy"
+              break
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "API never became healthy"
+              docker logs inbox
+              exit 1
+            fi
+            sleep 2
+          done
+
+          # Prove the whole pipeline works in the shipped image, not just that
+          # the process starts: ingest, wait for indexing, then ask.
+          curl -fsS -X POST http://localhost:4000/api/ingest \
+            -H 'content-type: application/json' \
+            -d '{"type":"note","content":"The ingestion queue persists job state in SQLite so an interrupted ingest is recoverable."}' > /dev/null
+          sleep 5
+          curl -fsS -X POST http://localhost:4000/api/query \
+            -H 'content-type: application/json' \
+            -d '{"question":"where is ingest job state persisted?"}' | tee /tmp/answer.json
+          grep -q '"citations":\[{' /tmp/answer.json || { echo "query returned no citations"; docker logs inbox; exit 1; }
+
+          # The SPA must be served from the same origin in the production image.
+          curl -fsS http://localhost:4000/ | grep -q 'AI Knowledge Inbox'
+
+          docker rm -f inbox
