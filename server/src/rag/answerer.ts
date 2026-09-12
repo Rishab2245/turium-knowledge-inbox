@@ -58,7 +58,7 @@ export class ExtractiveAnswerer implements Answerer {
 
     const text =
       'No chat model is configured, so this is an extract of the most relevant saved passages ' +
-      'rather than a generated answer. Set OPENAI_API_KEY to get synthesised answers.\n\n' +
+      'rather than a generated answer. Set GEMINI_API_KEY or OPENAI_API_KEY to get synthesised answers.\n\n' +
       body;
 
     log.debug({ question, sources: top.length }, 'answered extractively');

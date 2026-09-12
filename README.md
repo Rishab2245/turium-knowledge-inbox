@@ -5,6 +5,16 @@ content, with citations back to the exact passage each claim came from.
 
 Built for the Turium AI Full Stack Developer assignment.
 
+**Live:** [turium-knowledge-inbox.vercel.app](https://turium-knowledge-inbox.vercel.app)
+· API: [knowledge-inbox.onrender.com/api/health](https://knowledge-inbox.onrender.com/api/health)
+
+> Two things to expect on the free tiers. The **first load can take about a
+> minute** while the Render instance wakes from sleep. And the API runs without
+> a model key, so answers are **extracted from your saved text rather than
+> generated**, which the page says at the top. Retrieval, citations, async
+> ingestion and URL fetching are all fully live. Add `GEMINI_API_KEY` in the
+> Render dashboard to switch on generated answers.
+
 ```
 React + Vite + Tailwind   ->   Express (TypeScript)   ->   SQLite
                                       |                   items, chunks,

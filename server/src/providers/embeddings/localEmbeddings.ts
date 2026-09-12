@@ -15,7 +15,8 @@ const DIMENSIONS = 512;
  * and retrieval still behaves sensibly for keyword-ish questions.
  * What it costs: no semantic generalisation. "car" and "automobile" land in
  * unrelated dimensions. Character n-grams recover morphology (run/running)
- * and typo tolerance, not synonymy. Set OPENAI_API_KEY for real semantics.
+ * and typo tolerance, not synonymy. Set GEMINI_API_KEY or OPENAI_API_KEY for
+ * real semantics.
  */
 export class LocalEmbeddingProvider implements EmbeddingProvider {
   readonly id = 'local-hashed-ngram';

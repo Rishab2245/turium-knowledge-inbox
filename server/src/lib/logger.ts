@@ -22,7 +22,13 @@ export const logger = pino({
     return store ? { requestId: store.requestId } : {};
   },
   redact: {
-    paths: ['req.headers.authorization', 'req.headers.cookie', '*.apiKey', '*.OPENAI_API_KEY'],
+    paths: [
+      'req.headers.authorization',
+      'req.headers.cookie',
+      '*.apiKey',
+      '*.OPENAI_API_KEY',
+      '*.GEMINI_API_KEY',
+    ],
     censor: '[redacted]',
   },
   ...(isPretty
