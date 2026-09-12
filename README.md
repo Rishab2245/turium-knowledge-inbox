@@ -19,6 +19,32 @@ React + Vite + Tailwind   ->   Express (TypeScript)   ->   SQLite
 
 ---
 
+## Decisions at a glance
+
+Every significant call, what it bought, and what it cost. Each links to the full
+reasoning further down.
+
+| Decision | Why | What it costs |
+| --- | --- | --- |
+| [Paragraph-aware chunks, 1100 chars, 180 overlap](#chunking-paragraph-aware-sliding-window-1100-chars-with-180-overlap) | Chunks are shown to the user as citations, so they should start at the beginning of a thought, not mid-sentence | ~15% extra storage and embedding spend for the overlap; one global size is wrong for code and tables |
+| [Characters, not tokens](#chunking-paragraph-aware-sliding-window-1100-chars-with-180-overlap) | ~4x approximation for English with no tokenizer dependency | Imprecise, which would matter if we packed a context window to its limit. We retrieve 6 chunks and are nowhere near it |
+| [SQLite BLOBs + brute-force cosine](#vector-storage-sqlite-blobs-and-a-brute-force-scan) | Exact results, no ANN tuning, no native index, no service to provision. Milliseconds at inbox scale | O(N x dim) per query and every vector loaded into memory. Breaks around 10^5 chunks; migration path is pgvector + HNSW |
+| [Over-fetch then MMR re-rank](#retrieval-over-fetch-then-mmr) | Pure top-k on a sliding window returns near-duplicate neighbours, wasting context and citing one source three times | Extra similarity computations, and a badly tuned lambda surfaces irrelevant-but-different chunks |
+| [Async queue, job state in SQLite](#ingestion-asynchronous-with-job-state-in-sqlite) | Ingest takes seconds and depends on two external services; a crash mid-ingest is recoverable, not silently lost | Work does not survive the process, no fan-out across replicas. Swapping in BullMQ touches one file |
+| [Polling, not websockets](#polling-not-websockets) | One endpoint, no connection lifecycle, switches itself off when everything is ready | A poll every 1.5s while indexing, and it has to merge rather than replace so pagination survives |
+| [Server-side citation reconciliation](#citations-are-reconciled-server-side) | Models cite sources that were never supplied; mismatched brackets look correct and are worse than a missing citation | An occasional dropped marker when the model is right and the filter is wrong |
+| [`retryable` on the error, not its status](#retrying-is-a-cost-not-just-a-delay) | Google returns 429 for both a 60-second burst limit and an exhausted daily quota. Retrying the second burns free-tier requests to learn nothing | Separating them means matching on provider message text, which will drift |
+| [Works with no API key](#running-without-an-api-key) | Clones, installs and runs with no credentials; the whole test suite needs no network | The local embedder has no semantic generalisation. "car" and "automobile" land in unrelated dimensions |
+| [Heuristic URL extraction](#url-extraction-heuristics-not-a-readability-port) | ~40 lines instead of a jsdom dependency; took the RAG Wikipedia article from 32 noisy chunks to 15 of prose | Client-rendered pages return an empty shell (detected and reported, not silently indexed) |
+| [No auth](#what-i-would-do-before-calling-this-production) | The brief says single-user, and half an auth system is worse than none | Not deployable multi-tenant as-is |
+
+Two bugs worth calling out, both found by running against a real provider
+rather than reasoning about it: [embedding batches silently misordered by an
+omitted protobuf zero](#provider-agnostic-and-what-that-actually-costs), and
+[a poll that discarded already-loaded pages](#polling-not-websockets).
+
+---
+
 ## Quick start
 
 Requires Node 20.11 or newer. Nothing else: no Docker, no database server, and no
