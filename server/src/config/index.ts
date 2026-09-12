@@ -19,6 +19,9 @@ const EnvSchema = z.object({
   OPENAI_BASE_URL: z.string().url().optional(),
   EMBEDDING_MODEL: z.string().default('text-embedding-3-small'),
   CHAT_MODEL: z.string().default('gpt-4o-mini'),
+  // Only sent when set. Some models (gemini-embedding-001, text-embedding-3-*)
+  // can return a reduced vector, which halves index size and scan cost.
+  EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().optional(),
 
   // Retrieval + chunking knobs. Exposed because the "right" value is
   // corpus-dependent and reviewers should be able to try alternatives.

@@ -34,8 +34,21 @@ export class OpenAIChatProvider implements ChatProvider {
       );
     });
 
-    const text = response.choices[0]?.message?.content?.trim();
-    if (!text) throw new UpstreamError('Chat provider returned an empty completion', { model: this.model });
+    const choice = response.choices[0];
+    const text = choice?.message?.content?.trim();
+
+    if (!text) {
+      // Reasoning models can spend the entire output budget on hidden thinking
+      // tokens and return a 200 with empty content. Say so, because "empty
+      // completion" on its own sends you looking at the prompt instead of the
+      // model choice. Observed with Gemini 3.x flash models via the
+      // OpenAI-compatible endpoint; flash-lite does not think and is fine.
+      throw new UpstreamError(
+        'Chat provider returned an empty completion. If this is a reasoning model, its thinking ' +
+          'tokens likely consumed the output budget - raise max_tokens or use a non-reasoning model.',
+        { model: this.model, finishReason: choice?.finish_reason ?? 'unknown' },
+      );
+    }
 
     return { text, model: response.model ?? this.model };
   }

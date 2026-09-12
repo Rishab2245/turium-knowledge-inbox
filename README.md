@@ -52,6 +52,28 @@ OPENAI_BASE_URL=https://api.groq.com/openai/v1
 CHAT_MODEL=llama-3.3-70b-versatile
 ```
 
+#### Google Gemini (verified on the free tier)
+
+```bash
+OPENAI_API_KEY=<your AI Studio key>
+OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+EMBEDDING_MODEL=gemini-embedding-001
+CHAT_MODEL=gemini-3.1-flash-lite
+```
+
+Two things worth knowing, both found by testing against the live endpoint rather
+than reading docs:
+
+- **Use a non-reasoning chat model.** Gemini 3.x `flash` models spend their
+  output budget on hidden thinking tokens and return HTTP 200 with empty
+  content. `flash-lite` does not think and answers normally. The provider now
+  says this explicitly when a completion comes back empty, instead of leaving
+  you to suspect the prompt.
+- **`gemini-embedding-001` returns 3072 dimensions**, already L2-normalised, so
+  it satisfies the invariant the search layer relies on. It is 2x the memory and
+  scan cost of `text-embedding-3-small`; set `EMBEDDING_DIMENSIONS=768` to trade
+  a little accuracy for a 4x smaller index.
+
 > Switching embedding model changes the vector space. The app refuses to mix
 > dimensions and tells you to re-index (delete `server/data/*.db`) rather than
 > silently returning garbage similarity scores.
@@ -59,7 +81,7 @@ CHAT_MODEL=llama-3.3-70b-versatile
 ### Other commands
 
 ```bash
-npm test           # 75 tests, no network and no credentials required
+npm test           # 84 tests, no network and no credentials required
 npm run typecheck  # strict tsc across both workspaces
 npm run build      # production build of both halves
 ```
@@ -311,6 +333,35 @@ disguised feature: the local embedder has no semantic generalisation, so "car" a
 typo tolerance, not synonymy. It exists so the project clones and runs, and so the
 test suite needs no credentials and no network.
 
+### Provider-agnostic, and what that actually costs
+
+The app is written against the OpenAI-compatible surface rather than OpenAI
+itself, so `OPENAI_BASE_URL` can point at Gemini, Groq, Together, OpenRouter,
+Ollama or vLLM with no code change. That portability is not free: "compatible"
+endpoints differ in small ways that are easy to miss and expensive to debug.
+
+Two of them are handled here, both discovered by running against Gemini:
+
+**Omitted zero indexes.** The embeddings response identifies each vector by an
+`index` field so callers can restore request order. Gemini's endpoint omits
+`index` entirely when it is 0, because protobuf drops default values on the
+wire. A natural `data.sort((a, b) => a.index - b.index)` then evaluates `NaN`
+for that element, and sorting with a NaN comparator is unspecified. It happens
+to preserve order in V8, so it works by luck. The failure mode if that luck ever
+runs out is silent and total: every chunk is stored with a neighbour's vector
+and the entire index is quietly wrong, with nothing in the logs. `orderByIndex`
+treats a missing index as 0, which is precisely the value protobuf elided, and
+three tests pin the behaviour.
+
+**Unknown embedding dimensions.** A hardcoded model-to-dimension map cannot know
+about every model a third-party endpoint serves, and a 0 there silently disabled
+the guard that stops two embedding spaces being mixed. The provider now corrects
+its dimension from the first real response.
+
+The general lesson, and the reason both fixes carry comments: the dangerous
+incompatibilities are not the ones that throw. They are the ones that return 200
+and quietly corrupt data.
+
 ### URL extraction: heuristics, not a Readability port
 
 Fetched pages are stripped of scripts, landmark chrome and anything whose class
@@ -369,7 +420,7 @@ time or route egress through a filtering proxy.
 npm test
 ```
 
-75 tests across six files, all offline:
+84 tests across seven files, all offline:
 
 | File | Covers |
 | --- | --- |
@@ -378,6 +429,7 @@ npm test
 | `answerer.test.ts` | citation reconciliation, hallucinated markers, prompt assembly, extractive fallback |
 | `ingestionQueue.test.ts` | job claiming, retry budget, permanent-failure short-circuit, crash recovery |
 | `urlFetcher.test.ts` | content extraction, boilerplate stripping, title fallbacks, private-address classification |
+| `openaiEmbeddings.test.ts` | batch ordering including omitted zero indexes, dimension discovery, normalisation, truncated batches |
 | `api.test.ts` | every endpoint end-to-end over the real router, service, queue and schema, with only the providers stubbed |
 
 The API tests run against an in-memory SQLite database with a stub chat provider,

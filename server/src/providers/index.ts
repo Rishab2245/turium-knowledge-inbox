@@ -44,7 +44,7 @@ export function createProviders(): Providers {
   );
 
   return {
-    embeddings: new OpenAIEmbeddingProvider(client, config.EMBEDDING_MODEL),
+    embeddings: new OpenAIEmbeddingProvider(client, config.EMBEDDING_MODEL, config.EMBEDDING_DIMENSIONS),
     chat: new OpenAIChatProvider(client, config.CHAT_MODEL),
   };
 }
