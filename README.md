@@ -159,13 +159,22 @@ SQLite lives on a named volume, so data survives container rebuilds.
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/rishab2245/turium-knowledge-inbox)
 
-`render.yaml` provisions the service from the Dockerfile, sets
-`healthCheckPath` to `/api/health` and attaches a 1 GB persistent disk at `/data`.
-Set `GEMINI_API_KEY` (or `OPENAI_API_KEY`) in the dashboard after the first deploy.
+`render.yaml` provisions the service from the Dockerfile and sets
+`healthCheckPath` to `/api/health`. Add `GEMINI_API_KEY` in the dashboard after
+the first deploy; without it the service still runs in fallback mode.
 
-> **The disk is not optional.** SQLite on a container's ephemeral filesystem is
-> wiped on every deploy. The `disk:` block in `render.yaml` is what stops that,
-> and it is the single most common way this stack surprises people.
+The blueprint targets the **free** plan so the button works without a card,
+which costs two things:
+
+- **No persistent disk.** Free instances have an ephemeral filesystem, so the
+  SQLite database resets on every deploy and cold start. Fine for a demo.
+- **Spin-down.** Free instances sleep after ~15 minutes idle and the next
+  request pays a cold start of roughly a minute. A slow first load is the
+  platform waking up, not the app.
+
+> **On a paid instance, add the disk back.** `render.yaml` carries the exact
+> block to uncomment. Forgetting it is the single most common way this stack
+> surprises people: everything works, then a deploy silently empties the index.
 
 The same image runs unchanged on Fly.io, Railway, Cloud Run (with a mounted
 volume) or any Docker host.

@@ -1,16 +1,28 @@
 # One-click deploy on Render: the Dockerfile builds both halves and the Node
 # process serves the API and the built frontend from a single origin.
+#
+# This blueprint targets the FREE plan so the button works for anyone without a
+# card. Two consequences worth knowing before you read anything into them:
+#
+#   1. No persistent disk. Free instances have an ephemeral filesystem, so the
+#      SQLite database resets on every deploy and every cold start. Fine for a
+#      demo, wrong for anything real - see "Making it durable" below.
+#   2. Free instances spin down after ~15 minutes idle, and the next request
+#      pays a cold start of roughly a minute. A slow first load is the platform
+#      waking up, not the app being slow.
 services:
   - type: web
     name: knowledge-inbox
     runtime: docker
-    plan: starter
+    plan: free
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production
+      # Under /tmp because a free instance's filesystem is ephemeral anyway and
+      # /tmp is guaranteed writable by the non-root user the image runs as.
       - key: DATABASE_PATH
-        value: /data/knowledge-inbox.db
+        value: /tmp/knowledge-inbox.db
       # Set one of these in the dashboard after the first deploy; never
       # committed. The base URL and models are defaulted per provider, so the
       # key is the only thing needed. With neither, the service still runs in
@@ -19,9 +31,22 @@ services:
         sync: false
       - key: OPENAI_API_KEY
         sync: false
-    disk:
-      # SQLite needs a real disk. Without this the database is wiped on every
-      # deploy, which is the single most common way this stack surprises people.
-      name: knowledge-inbox-data
-      mountPath: /data
-      sizeGB: 1
+
+# ---------------------------------------------------------------------------
+# Making it durable
+#
+# SQLite needs a real disk to survive a deploy. On a paid instance, switch the
+# plan and add the disk back:
+#
+#   plan: starter
+#   envVars:
+#     - key: DATABASE_PATH
+#       value: /data/knowledge-inbox.db
+#   disk:
+#     name: knowledge-inbox-data
+#     mountPath: /data
+#     sizeGB: 1
+#
+# Forgetting the disk on a paid plan is the single most common way this stack
+# surprises people: everything works, then a deploy silently empties the index.
+# ---------------------------------------------------------------------------
