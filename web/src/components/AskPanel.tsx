@@ -7,11 +7,22 @@ interface Props {
   error: string | null;
   result: QueryResponse | null;
   readyItemCount: number;
+  selectedCount: number;
+  onClearSelection: () => void;
   onAsk: (question: string) => void;
   onFocusSource: (itemId: string | null) => void;
 }
 
-export function AskPanel({ isAsking, error, result, readyItemCount, onAsk, onFocusSource }: Props) {
+export function AskPanel({
+  isAsking,
+  error,
+  result,
+  readyItemCount,
+  selectedCount,
+  onClearSelection,
+  onAsk,
+  onFocusSource,
+}: Props) {
   const [question, setQuestion] = useState('');
   const canAsk = !isAsking && question.trim().length >= 3;
 
@@ -26,10 +37,20 @@ export function AskPanel({ isAsking, error, result, readyItemCount, onAsk, onFoc
         <label htmlFor="question" className="text-sm font-semibold text-slate-900">
           Ask your inbox
         </label>
+
         <p className="mt-0.5 text-xs text-slate-500">
-          {readyItemCount === 0
-            ? 'Nothing is indexed yet, so there is nothing to answer from.'
-            : `Answered only from your ${readyItemCount} indexed source${readyItemCount === 1 ? '' : 's'}.`}
+          {readyItemCount === 0 ? (
+            'Nothing is indexed yet, so there is nothing to answer from.'
+          ) : selectedCount > 0 ? (
+            <>
+              Restricted to {selectedCount} selected source{selectedCount === 1 ? '' : 's'}.{' '}
+              <button type="button" onClick={onClearSelection} className="text-indigo-600 hover:underline">
+                Search all instead
+              </button>
+            </>
+          ) : (
+            `Answered only from your ${readyItemCount} indexed source${readyItemCount === 1 ? '' : 's'}.`
+          )}
         </p>
 
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">

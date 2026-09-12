@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Item } from './api/types';
 import { AddSourceForm } from './components/AddSourceForm';
 import { AskPanel } from './components/AskPanel';
@@ -18,16 +18,40 @@ import { useItems } from './hooks/useItems';
  * removing any problem.
  */
 export default function App() {
-  const { items, isLoading, error, hasWorkInFlight, refresh, addOptimistic, remove } = useItems();
+  const {
+    items,
+    isLoading,
+    isLoadingMore,
+    hasMore,
+    error,
+    hasWorkInFlight,
+    refresh,
+    loadMore,
+    addOptimistic,
+    remove,
+  } = useItems();
   const { result, isAsking, error: askError, ask } = useAsk();
 
-  // Bumping this re-reads /api/health after anything that changes the index.
+  // Incremented after anything that changes the index, which is what /health
+  // reports. Also bumped when background indexing finishes, since that is when
+  // the chunk count becomes accurate.
   const [healthRevision, setHealthRevision] = useState(0);
-  const { health, isOffline } = useHealth(healthRevision + (hasWorkInFlight ? 0 : items.length));
+  const { health, isOffline } = useHealth(healthRevision);
 
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
 
   const readyItemCount = useMemo(() => items.filter((item) => item.status === 'ready').length, [items]);
+
+  const bumpHealth = useCallback(() => setHealthRevision((value) => value + 1), []);
+
+  // The chunk count in the header is only accurate once indexing settles, so
+  // re-read health on the true -> false edge of background work.
+  const wasWorkInFlight = useRef(hasWorkInFlight);
+  useEffect(() => {
+    if (wasWorkInFlight.current && !hasWorkInFlight) bumpHealth();
+    wasWorkInFlight.current = hasWorkInFlight;
+  }, [hasWorkInFlight, bumpHealth]);
 
   // Items backing the current answer stay outlined even when nothing is hovered,
   // so the answer and the list are visibly connected.
@@ -40,21 +64,44 @@ export default function App() {
     (item: Item, deduplicated: boolean) => {
       if (deduplicated) void refresh();
       else addOptimistic(item);
-      setHealthRevision((value) => value + 1);
+      bumpHealth();
     },
-    [addOptimistic, refresh],
+    [addOptimistic, refresh, bumpHealth],
   );
 
   const handleDelete = useCallback(
     async (id: string) => {
       try {
         await remove(id);
-        setHealthRevision((value) => value + 1);
+        setSelectedItemIds((current) => {
+          if (!current.has(id)) return current;
+          const next = new Set(current);
+          next.delete(id);
+          return next;
+        });
+        bumpHealth();
       } catch {
         // useItems already rolled the list back; the failure is visible there.
       }
     },
-    [remove],
+    [remove, bumpHealth],
+  );
+
+  const handleToggleSelected = useCallback((id: string) => {
+    setSelectedItemIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleAsk = useCallback(
+    (question: string) => {
+      const itemIds = [...selectedItemIds];
+      void ask(question, itemIds.length > 0 ? { itemIds } : {});
+    },
+    [ask, selectedItemIds],
   );
 
   return (
@@ -95,8 +142,13 @@ export default function App() {
             <ItemList
               items={items}
               isLoading={isLoading}
+              isLoadingMore={isLoadingMore}
+              hasMore={hasMore}
               error={error}
               highlightedItemIds={highlightedItemIds}
+              selectedItemIds={selectedItemIds}
+              onToggleSelected={handleToggleSelected}
+              onLoadMore={() => void loadMore()}
               onDelete={handleDelete}
             />
           </section>
@@ -107,7 +159,9 @@ export default function App() {
               error={askError}
               result={result}
               readyItemCount={readyItemCount}
-              onAsk={(question) => ask(question)}
+              selectedCount={selectedItemIds.size}
+              onClearSelection={() => setSelectedItemIds(new Set())}
+              onAsk={handleAsk}
               onFocusSource={setFocusedItemId}
             />
           </section>

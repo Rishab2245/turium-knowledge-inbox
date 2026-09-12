@@ -9,3 +9,7 @@ data/
 .DS_Store
 *.log
 coverage/
+
+# Build artifacts
+server/public/
+*.tsbuildinfo

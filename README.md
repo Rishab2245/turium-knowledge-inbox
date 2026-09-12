@@ -81,7 +81,7 @@ than reading docs:
 ### Other commands
 
 ```bash
-npm test           # 84 tests, no network and no credentials required
+npm test           # 126 tests (backend + frontend), no network or credentials
 npm run typecheck  # strict tsc across both workspaces
 npm run build      # production build of both halves
 ```
@@ -154,6 +154,10 @@ near-identical passages from the same document.
 **Answering.** The top passages go to a chat model under a strict citation
 contract. The answer's `[n]` markers map to the returned `citations` array, and
 markers the model invents are stripped before the response leaves the server.
+
+**Scoping.** Tick any indexed sources to restrict a question to just those. The
+UI passes `itemIds` to `POST /query`, which narrows the vector scan rather than
+filtering after the fact, so "ask this document" genuinely searches only it.
 
 **Inspectability.** Every query response carries the retrieved passages and their
 scores alongside the answer, and the UI can show them. A RAG answer you cannot
@@ -309,6 +313,14 @@ stops the moment everything is `ready`. For a single-user app this is one endpoi
 and no connection lifecycle to manage. With multiple users or longer jobs, SSE on
 a job-status stream would be the right call.
 
+The non-obvious part is that polling has to coexist with pagination. A poll that
+replaced state with page one would silently discard every page the user had
+already loaded, so `refresh` merges the first page over the existing list by id
+and keeps the tail. Items are newest-first and only freshly ingested items change
+status, so page one always covers everything that can have moved. `loadMore` also
+de-duplicates on id, because keyset pagination cannot see that an item shifted
+across the page boundary between two requests.
+
 ### Citations are reconciled server-side
 
 Models occasionally cite a source number that was never supplied. The server
@@ -420,7 +432,15 @@ time or route egress through a filtering proxy.
 npm test
 ```
 
-84 tests across seven files, all offline:
+126 tests, all offline, no credentials and no network.
+
+```bash
+npm test          # both suites
+npm run test:api  # 84 backend tests (vitest)
+npm run test:web  # 42 frontend tests (vitest + React Testing Library)
+```
+
+### Backend — 84 tests
 
 | File | Covers |
 | --- | --- |
@@ -433,12 +453,29 @@ npm test
 | `api.test.ts` | every endpoint end-to-end over the real router, service, queue and schema, with only the providers stubbed |
 
 The API tests run against an in-memory SQLite database with a stub chat provider,
-so the whole suite is deterministic and needs no credentials.
+so the whole suite is deterministic.
 
-**Not covered:** no frontend tests. With the timebox I chose backend correctness
-over component tests, since that is where the logic that can be silently wrong
-lives. React Testing Library on `AddSourceForm` and `useAsk` (particularly the
-abort-on-new-question race) would be the first addition.
+### Frontend — 42 tests
+
+| File | Covers |
+| --- | --- |
+| `useAsk.test.ts` | answer state, scoping options, the abort-on-new-question race, network and validation failures |
+| `useItems.test.ts` | first-page load, cursor pagination, cross-page de-duplication, poll-merge preserving later pages, optimistic delete and rollback |
+| `AddSourceForm.test.tsx` | note and URL submission, payload shape, field-level error display, deduplicated saves |
+| `AnswerCard.test.tsx` | citation chip rendering, unmatched markers, score formatting, collapsed retrieval internals, fallback warning |
+| `App.test.tsx` | empty state, offline banner, ask-and-render, load-more, source scoping, failed-item display, delete |
+
+Rather than mocking the API client, these stub `fetch` and route on the real URL
+the client builds. Query-string construction, status handling and error parsing
+stay inside the code under test instead of inside the mock.
+
+Two of these pin bugs that were found and fixed rather than imagined: the
+stale-answer race in `useAsk`, and a poll that discarded already-loaded
+pages in `useItems`.
+
+**Not covered:** no end-to-end browser test. The flows were driven manually in a
+real browser, but a Playwright run against the built image would catch the
+integration seams jsdom cannot see.
 
 ---
 
@@ -489,6 +526,8 @@ problem.
    database. A background re-embed job would make it a non-event.
 7. **OpenTelemetry traces** across ingest and query, so latency attribution does not
    depend on reading timestamps in logs.
+8. **A Playwright run** against the built image, covering the flows that are
+   currently only verified by hand in a real browser.
 
 ---
 

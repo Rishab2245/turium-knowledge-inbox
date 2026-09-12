@@ -28,8 +28,9 @@ jobs:
         run: npm run typecheck
 
       - name: Test
-        # No credentials and no network: the suite stubs the model providers and
-        # runs against an in-memory SQLite database.
+        # Both workspaces. No credentials and no network: the backend suite stubs
+        # the model providers and runs against an in-memory SQLite database, and
+        # the frontend suite stubs fetch in jsdom.
         run: npm test
 
       - name: Build

@@ -5,12 +5,28 @@ import { StatusBadge } from './StatusBadge';
 interface Props {
   items: Item[];
   isLoading: boolean;
+  isLoadingMore: boolean;
+  hasMore: boolean;
   error: string | null;
   highlightedItemIds: Set<string>;
+  selectedItemIds: Set<string>;
+  onToggleSelected: (id: string) => void;
+  onLoadMore: () => void;
   onDelete: (id: string) => void;
 }
 
-export function ItemList({ items, isLoading, error, highlightedItemIds, onDelete }: Props) {
+export function ItemList({
+  items,
+  isLoading,
+  isLoadingMore,
+  hasMore,
+  error,
+  highlightedItemIds,
+  selectedItemIds,
+  onToggleSelected,
+  onLoadMore,
+  onDelete,
+}: Props) {
   if (isLoading) {
     return <SkeletonList />;
   }
@@ -35,21 +51,45 @@ export function ItemList({ items, isLoading, error, highlightedItemIds, onDelete
   }
 
   return (
-    <ul className="space-y-2">
-      {items.map((item) => (
-        <ItemRow
-          key={item.id}
-          item={item}
-          isHighlighted={highlightedItemIds.has(item.id)}
-          onDelete={() => onDelete(item.id)}
-        />
-      ))}
-    </ul>
+    <div className="space-y-2">
+      <ul className="space-y-2">
+        {items.map((item) => (
+          <ItemRow
+            key={item.id}
+            item={item}
+            isHighlighted={highlightedItemIds.has(item.id)}
+            isSelected={selectedItemIds.has(item.id)}
+            onToggleSelected={() => onToggleSelected(item.id)}
+            onDelete={() => onDelete(item.id)}
+          />
+        ))}
+      </ul>
+
+      {hasMore && (
+        <button
+          type="button"
+          onClick={onLoadMore}
+          disabled={isLoadingMore}
+          className="w-full rounded-xl border border-slate-300 bg-white py-2 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+        >
+          {isLoadingMore ? 'Loading...' : 'Load more'}
+        </button>
+      )}
+    </div>
   );
 }
 
-function ItemRow({ item, isHighlighted, onDelete }: { item: Item; isHighlighted: boolean; onDelete: () => void }) {
+interface RowProps {
+  item: Item;
+  isHighlighted: boolean;
+  isSelected: boolean;
+  onToggleSelected: () => void;
+  onDelete: () => void;
+}
+
+function ItemRow({ item, isHighlighted, isSelected, onToggleSelected, onDelete }: RowProps) {
   const host = hostnameOf(item.url);
+  const isReady = item.status === 'ready';
 
   return (
     <li
@@ -59,7 +99,17 @@ function ItemRow({ item, isHighlighted, onDelete }: { item: Item; isHighlighted:
         isHighlighted ? 'border-indigo-300 ring-2 ring-indigo-100' : 'border-slate-200'
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start gap-3">
+        {/* Only indexed items can be searched, so only they can be scoped to. */}
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onToggleSelected}
+          disabled={!isReady}
+          aria-label={`Restrict questions to ${item.title}`}
+          className="mt-0.5 size-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 disabled:opacity-30"
+        />
+
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-slate-900" title={item.title}>
             {item.title}
@@ -69,7 +119,7 @@ function ItemRow({ item, isHighlighted, onDelete }: { item: Item; isHighlighted:
             <span>{item.sourceType === 'url' ? (host ?? 'link') : 'note'}</span>
             <span aria-hidden="true">.</span>
             <span>{relativeTime(item.createdAt)}</span>
-            {item.status === 'ready' && (
+            {isReady && (
               <>
                 <span aria-hidden="true">.</span>
                 <span>
