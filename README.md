@@ -35,53 +35,67 @@ proxies `/api` to it, so the browser only ever talks to one origin.
 ### With a real model provider
 
 Everything works without credentials, but answers are extracted rather than
-generated (see [Running without an API key](#running-without-an-api-key)). To get
-semantic search and synthesised answers:
+generated (see [Running without an API key](#running-without-an-api-key)). One
+key is all the configuration needed:
 
 ```bash
 cp .env.example server/.env
-# put your key in OPENAI_API_KEY, then
+# put a key in GEMINI_API_KEY (free tier: https://aistudio.google.com/apikey)
 npm run dev
 ```
 
-Any OpenAI-compatible endpoint works. For Groq, Together, OpenRouter, Ollama or a
-local vLLM, set `OPENAI_BASE_URL` and the model names as well:
+That is genuinely all of it. The base URL, embedding model and chat model are
+defaulted per provider:
+
+| Key you set | Embeddings | Chat |
+| --- | --- | --- |
+| `GEMINI_API_KEY` | `gemini-embedding-001` | `gemini-3.1-flash-lite` |
+| `OPENAI_API_KEY` | `text-embedding-3-small` | `gpt-4o-mini` |
+
+`GET /api/health` reports which provider is live, and the UI shows the model in
+its header. If both keys are set, Gemini wins.
+
+Anything else OpenAI-compatible works by overriding the base URL, with no
+provider-specific code:
 
 ```bash
+OPENAI_API_KEY=gsk_...
 OPENAI_BASE_URL=https://api.groq.com/openai/v1
 CHAT_MODEL=llama-3.3-70b-versatile
 ```
 
-#### Google Gemini (verified on the free tier)
+Two Gemini specifics, both found by testing against the live endpoint rather
+than reading docs, and both handled for you:
 
-```bash
-OPENAI_API_KEY=<your AI Studio key>
-OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
-EMBEDDING_MODEL=gemini-embedding-001
-CHAT_MODEL=gemini-3.1-flash-lite
-```
-
-Two things worth knowing, both found by testing against the live endpoint rather
-than reading docs:
-
-- **Use a non-reasoning chat model.** Gemini 3.x `flash` models spend their
-  output budget on hidden thinking tokens and return HTTP 200 with empty
-  content. `flash-lite` does not think and answers normally. The provider now
-  says this explicitly when a completion comes back empty, instead of leaving
-  you to suspect the prompt.
+- **Reasoning models return empty answers.** Gemini 3.x `flash` and `pro` spend
+  the output budget on hidden thinking tokens and return HTTP 200 with no
+  content. The default is `flash-lite`, which does not think; the server warns
+  at boot if you override it with one that does, and an empty completion says
+  so rather than leaving you to suspect the prompt.
 - **`gemini-embedding-001` returns 3072 dimensions**, already L2-normalised, so
-  it satisfies the invariant the search layer relies on. It is 2x the memory and
-  scan cost of `text-embedding-3-small`; set `EMBEDDING_DIMENSIONS=768` to trade
-  a little accuracy for a 4x smaller index.
+  it satisfies the invariant the search layer relies on. That is 2x the memory
+  and scan cost of `text-embedding-3-small`; set `EMBEDDING_DIMENSIONS=768` for
+  a 4x smaller index at some accuracy cost.
 
 > Switching embedding model changes the vector space. The app refuses to mix
 > dimensions and tells you to re-index (delete `server/data/*.db`) rather than
 > silently returning garbage similarity scores.
 
+#### Free-tier quotas
+
+Free keys have low daily caps, so the app is careful with them: **one request
+per ingested item** (all of an item's chunks embed in one batched call) and
+**two per question** (one embedding, one chat).
+
+It is also careful about failure. A 429 from a per-minute burst limit is
+retried; a 429 from an exhausted daily quota is not, because three automatic
+retries on a metered key spend three more requests to learn the same thing. The
+item is marked failed with the provider's own message, visible in the UI.
+
 ### Other commands
 
 ```bash
-npm test           # 126 tests (backend + frontend), no network or credentials
+npm test           # 151 tests (backend + frontend), no network or credentials
 npm run typecheck  # strict tsc across both workspaces
 npm run build      # production build of both halves
 ```
@@ -101,12 +115,11 @@ Container Registry.
 
 ```bash
 docker run -p 4000:4000 -v knowledge-inbox-data:/data \
-  -e OPENAI_API_KEY=sk-... \
+  -e GEMINI_API_KEY=... \
   ghcr.io/rishab2245/turium-knowledge-inbox:latest
 ```
 
-Then open <http://localhost:4000>. Omit `OPENAI_API_KEY` to run in offline
-fallback mode.
+Then open <http://localhost:4000>. Omit the key to run in offline fallback mode.
 
 ### Build it yourself
 
@@ -122,7 +135,7 @@ SQLite lives on a named volume, so data survives container rebuilds.
 
 `render.yaml` provisions the service from the Dockerfile, sets
 `healthCheckPath` to `/api/health` and attaches a 1 GB persistent disk at `/data`.
-Set `OPENAI_API_KEY` in the dashboard after the first deploy.
+Set `GEMINI_API_KEY` (or `OPENAI_API_KEY`) in the dashboard after the first deploy.
 
 > **The disk is not optional.** SQLite on a container's ephemeral filesystem is
 > wiped on every deploy. The `disk:` block in `render.yaml` is what stops that,
@@ -374,6 +387,29 @@ The general lesson, and the reason both fixes carry comments: the dangerous
 incompatibilities are not the ones that throw. They are the ones that return 200
 and quietly corrupt data.
 
+### Retrying is a cost, not just a delay
+
+`classifyProviderError` maps a provider error onto the app's taxonomy, and the
+interesting output is not the status code but the `retryable` flag, which the
+retry helper and the ingestion queue both obey.
+
+The distinction that forced this: Google returns **429 for two opposite
+situations**. A per-minute burst limit clears in seconds and should be retried.
+A daily quota will not clear until tomorrow, and on a free key three automatic
+retries spend three more requests to learn the same thing. Treating every 429 as
+retryable is not a harmless default there; it is actively destructive. The two
+are separated on the provider's own message text, which is unlovely and
+documented as such in the code.
+
+The same flag fixes two adjacent bugs. A bad API key used to surface as a 502
+and get retried three times before failing; so did a 404 for a model the account
+cannot access. Neither will ever fix itself, so both now fail on the first
+attempt with a message naming the setting to change.
+
+This is also why `retryable` lives on the error rather than being inferred from
+its status: the two genuinely disagree, and a status code alone cannot express
+"429 but hopeless" or "5xx but permanent".
+
 ### URL extraction: heuristics, not a Readability port
 
 Fetched pages are stripped of scripts, landmark chrome and anything whose class
@@ -432,15 +468,15 @@ time or route egress through a filtering proxy.
 npm test
 ```
 
-126 tests, all offline, no credentials and no network.
+151 tests, all offline, no credentials and no network.
 
 ```bash
 npm test          # both suites
-npm run test:api  # 84 backend tests (vitest)
+npm run test:api  # 109 backend tests (vitest)
 npm run test:web  # 42 frontend tests (vitest + React Testing Library)
 ```
 
-### Backend — 84 tests
+### Backend — 109 tests
 
 | File | Covers |
 | --- | --- |
@@ -450,6 +486,7 @@ npm run test:web  # 42 frontend tests (vitest + React Testing Library)
 | `ingestionQueue.test.ts` | job claiming, retry budget, permanent-failure short-circuit, crash recovery |
 | `urlFetcher.test.ts` | content extraction, boilerplate stripping, title fallbacks, private-address classification |
 | `openaiEmbeddings.test.ts` | batch ordering including omitted zero indexes, dimension discovery, normalisation, truncated batches |
+| `providerConfig.test.ts` | provider resolution from one key, reasoning-model detection, quota vs burst 429, auth and unavailable-model classification |
 | `api.test.ts` | every endpoint end-to-end over the real router, service, queue and schema, with only the providers stubbed |
 
 The API tests run against an in-memory SQLite database with a stub chat provider,

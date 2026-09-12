@@ -69,7 +69,8 @@ export const makeHealth = (overrides: Partial<HealthResponse> = {}): HealthRespo
   uptimeSeconds: 10,
   environment: 'test',
   providers: {
-    embeddings: { id: 'openai', model: 'text-embedding-3-small', remote: true },
+    name: 'openai',
+    embeddings: { id: 'openai', model: 'text-embedding-3-small', remote: true, dimensions: 1536 },
     chat: { id: 'openai', model: 'gpt-4o-mini', remote: true },
   },
   index: { items: { pending: 0, processing: 0, ready: 1, failed: 0 }, chunks: 3, pendingJobs: 0, embeddingDimensions: 1536 },

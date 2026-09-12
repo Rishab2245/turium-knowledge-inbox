@@ -109,10 +109,11 @@ export class IngestionQueue extends EventEmitter {
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
 
-        // A 4xx from the pipeline means the input is wrong, not that the world
-        // was briefly unavailable. Retrying a 404 page or a blocked address
-        // three times just delays the error the user needs to see.
-        const permanent = error instanceof AppError && error.status >= 400 && error.status < 500;
+        // The error itself knows whether another attempt could help. A bad URL
+        // or an exhausted daily quota is permanent, and retrying it three times
+        // only delays the message the user needs to see - or, on a metered free
+        // tier, spends three more requests to learn the same thing.
+        const permanent = error instanceof AppError && !error.retryable;
         const { willRetry } = this.jobs.fail(jobId, message, config.MAX_JOB_ATTEMPTS, { permanent });
 
         if (willRetry) {

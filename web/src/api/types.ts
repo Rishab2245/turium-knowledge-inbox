@@ -70,7 +70,8 @@ export interface HealthResponse {
   uptimeSeconds: number;
   environment: string;
   providers: {
-    embeddings: { id: string; model: string; remote: boolean };
+    name: 'gemini' | 'openai' | 'local';
+    embeddings: { id: string; model: string; remote: boolean; dimensions: number | null };
     chat: { id: string; model: string; remote: boolean };
   };
   index: {

@@ -11,12 +11,14 @@ services:
         value: production
       - key: DATABASE_PATH
         value: /data/knowledge-inbox.db
+      # Set one of these in the dashboard after the first deploy; never
+      # committed. The base URL and models are defaulted per provider, so the
+      # key is the only thing needed. With neither, the service still runs in
+      # its offline fallback mode.
+      - key: GEMINI_API_KEY
+        sync: false
       - key: OPENAI_API_KEY
-        sync: false # set in the dashboard; never committed
-      - key: CHAT_MODEL
-        value: gpt-4o-mini
-      - key: EMBEDDING_MODEL
-        value: text-embedding-3-small
+        sync: false
     disk:
       # SQLite needs a real disk. Without this the database is wiped on every
       # deploy, which is the single most common way this stack surprises people.

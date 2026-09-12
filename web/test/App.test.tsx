@@ -23,7 +23,8 @@ describe('App', () => {
       'GET /api/health': () =>
         makeHealth({
           providers: {
-            embeddings: { id: 'local-hashed-ngram', model: 'local-hashed-ngram-512', remote: false },
+            name: 'local',
+            embeddings: { id: 'local-hashed-ngram', model: 'local-hashed-ngram-512', remote: false, dimensions: 512 },
             chat: { id: 'extractive-fallback', model: 'none', remote: false },
           },
         }),

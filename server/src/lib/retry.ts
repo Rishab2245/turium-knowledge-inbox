@@ -1,4 +1,5 @@
 import type { Logger } from 'pino';
+import { AppError } from '../domain/errors.js';
 
 interface RetryOptions {
   label: string;
@@ -39,6 +40,10 @@ export async function withRetry<T>(operation: () => Promise<T>, options: RetryOp
 }
 
 function isRetryable(error: unknown): boolean {
+  // A classified error already knows. Trusting it is what keeps a daily-quota
+  // 429 from being retried three times on a free tier.
+  if (error instanceof AppError) return error.retryable;
+
   const status = (error as { status?: number })?.status;
   if (typeof status === 'number') return status === 408 || status === 429 || status >= 500;
 

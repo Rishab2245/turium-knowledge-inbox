@@ -1,5 +1,6 @@
 import type OpenAI from 'openai';
 import { UpstreamError } from '../../domain/errors.js';
+import { classifyProviderError } from '../classifyProviderError.js';
 import { loggerFor } from '../../lib/logger.js';
 import { withRetry } from '../../lib/retry.js';
 import type { ChatCompletion, ChatMessage, ChatProvider } from './types.js';
@@ -7,32 +8,40 @@ import type { ChatCompletion, ChatMessage, ChatProvider } from './types.js';
 const log = loggerFor('llm.openai');
 
 export class OpenAIChatProvider implements ChatProvider {
-  readonly id = 'openai';
   readonly isRemote = true;
 
   constructor(
     private readonly client: OpenAI,
     readonly model: string,
+    /**
+     * The vendor actually being called. Every provider here speaks the OpenAI
+     * wire format, so hardcoding 'openai' would report Gemini answers as having
+     * come from OpenAI in both the API response and the logs.
+     */
+    readonly id: string = 'openai',
   ) {}
 
   async complete(messages: ChatMessage[]): Promise<ChatCompletion> {
+    // Classified inside the retried operation so withRetry can honour the
+    // resulting `retryable` flag rather than guessing from a raw status code.
     const response = await withRetry(
       () =>
-        this.client.chat.completions.create({
-          model: this.model,
-          messages,
-          // Answers must stay inside the retrieved context; sampling creativity
-          // is exactly what causes citation drift.
-          temperature: 0.1,
-          max_tokens: 700,
-        }),
+        this.client.chat.completions
+          .create({
+            model: this.model,
+            messages,
+            // Answers must stay inside the retrieved context; sampling creativity
+            // is exactly what causes citation drift.
+            temperature: 0.1,
+            // Generous because a reasoning model bills its hidden thinking
+            // against this budget and returns nothing if it runs out.
+            max_tokens: 2000,
+          })
+          .catch((error: unknown) => {
+            throw classifyProviderError(error, { stage: 'chat', model: this.model });
+          }),
       { label: 'chat.completions.create', log },
-    ).catch((error: unknown) => {
-      throw new UpstreamError(
-        `Chat provider failed: ${error instanceof Error ? error.message : String(error)}`,
-        { model: this.model },
-      );
-    });
+    );
 
     const choice = response.choices[0];
     const text = choice?.message?.content?.trim();

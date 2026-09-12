@@ -1,5 +1,6 @@
 import type OpenAI from 'openai';
 import { UpstreamError } from '../../domain/errors.js';
+import { classifyProviderError } from '../classifyProviderError.js';
 import { loggerFor } from '../../lib/logger.js';
 import { withRetry } from '../../lib/retry.js';
 import type { EmbeddingProvider } from './types.js';
@@ -17,7 +18,6 @@ const KNOWN_DIMENSIONS: Record<string, number> = {
 };
 
 export class OpenAIEmbeddingProvider implements EmbeddingProvider {
-  readonly id = 'openai';
   readonly isRemote = true;
 
   /**
@@ -33,6 +33,8 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
     readonly model: string,
     /** Some providers accept a reduced output size; only sent when configured. */
     private readonly requestedDimensions?: number,
+    /** The vendor actually being called; see OpenAIChatProvider for why. */
+    readonly id: string = 'openai',
   ) {
     this.#dimensions = requestedDimensions ?? KNOWN_DIMENSIONS[model] ?? 0;
   }
@@ -46,20 +48,21 @@ export class OpenAIEmbeddingProvider implements EmbeddingProvider {
 
     for (let offset = 0; offset < texts.length; offset += BATCH_SIZE) {
       const batch = texts.slice(offset, offset + BATCH_SIZE);
+      // Classify inside the retried operation so withRetry can honour the
+      // resulting `retryable` flag instead of guessing from a raw status code.
       const response = await withRetry(
         () =>
-          this.client.embeddings.create({
-            model: this.model,
-            input: batch,
-            ...(this.requestedDimensions ? { dimensions: this.requestedDimensions } : {}),
-          }),
+          this.client.embeddings
+            .create({
+              model: this.model,
+              input: batch,
+              ...(this.requestedDimensions ? { dimensions: this.requestedDimensions } : {}),
+            })
+            .catch((error: unknown) => {
+              throw classifyProviderError(error, { stage: 'embeddings', model: this.model, batchSize: batch.length });
+            }),
         { label: 'embeddings.create', log },
-      ).catch((error: unknown) => {
-        throw new UpstreamError(
-          `Embedding provider failed: ${error instanceof Error ? error.message : String(error)}`,
-          { model: this.model, batchSize: batch.length },
-        );
-      });
+      );
 
       const ordered = orderByIndex(response.data);
       if (ordered.length !== batch.length) {

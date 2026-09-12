@@ -20,10 +20,14 @@ export function createHealthRouter(service: KnowledgeService, providers: Provide
       uptimeSeconds: Math.round(process.uptime()),
       environment: config.NODE_ENV,
       providers: {
+        // The vendor actually being talked to, which "openai" alone does not
+        // say now that Gemini is reached through the same client.
+        name: config.provider.name,
         embeddings: {
           id: providers.embeddings.id,
           model: providers.embeddings.model,
           remote: providers.embeddings.isRemote,
+          dimensions: providers.embeddings.dimensions || null,
         },
         chat: providers.chat
           ? { id: providers.chat.id, model: providers.chat.model, remote: true }

@@ -25,8 +25,9 @@ export function ProviderNotice({ health, isOffline }: { health: HealthResponse |
       <p className="font-medium">Running without a model provider.</p>
       <p className="mt-0.5 text-xs">
         Embeddings use the local hashed fallback and answers are extracted rather than generated. Set
-        <code className="mx-1 rounded bg-amber-100 px-1">OPENAI_API_KEY</code>
-        in <code>server/.env</code> and restart for semantic search and synthesised answers.
+        <code className="mx-1 rounded bg-amber-100 px-1">GEMINI_API_KEY</code>
+        (or <code className="mx-1 rounded bg-amber-100 px-1">OPENAI_API_KEY</code>) in <code>server/.env</code> and
+        restart for semantic search and synthesised answers.
       </p>
     </div>
   );
