@@ -36,7 +36,7 @@ export default function App() {
   // reports. Also bumped when background indexing finishes, since that is when
   // the chunk count becomes accurate.
   const [healthRevision, setHealthRevision] = useState(0);
-  const { health, isOffline } = useHealth(healthRevision);
+  const { health, status: healthStatus } = useHealth(healthRevision);
 
   const [focusedItemId, setFocusedItemId] = useState<string | null>(null);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
@@ -126,7 +126,7 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-        <ProviderNotice health={health} isOffline={isOffline} />
+        <ProviderNotice health={health} status={healthStatus} />
 
         <div className="mt-4 grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
           <section aria-label="Saved sources" className="space-y-4">

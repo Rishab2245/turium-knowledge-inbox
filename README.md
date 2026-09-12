@@ -8,12 +8,11 @@ Built for the Turium AI Full Stack Developer assignment.
 **Live:** [turium-knowledge-inbox.vercel.app](https://turium-knowledge-inbox.vercel.app)
 · API: [knowledge-inbox.onrender.com/api/health](https://knowledge-inbox.onrender.com/api/health)
 
-> Two things to expect on the free tiers. The **first load can take about a
-> minute** while the Render instance wakes from sleep. And the API runs without
-> a model key, so answers are **extracted from your saved text rather than
-> generated**, which the page says at the top. Retrieval, citations, async
-> ingestion and URL fetching are all fully live. Add `GEMINI_API_KEY` in the
-> Render dashboard to switch on generated answers.
+> Running on Gemini (`gemini-3.1-flash-lite` + `gemini-embedding-001`). Two
+> free-tier behaviours to expect: the **first load can take about a minute**
+> while the Render instance wakes from sleep, and because free instances have
+> an ephemeral filesystem, **saved items reset** whenever one sleeps or
+> redeploys. Add a note or a URL and it indexes in a couple of seconds.
 
 ```
 React + Vite + Tailwind   ->   Express (TypeScript)   ->   SQLite
@@ -131,7 +130,7 @@ item is marked failed with the provider's own message, visible in the UI.
 ### Other commands
 
 ```bash
-npm test           # 151 tests (backend + frontend), no network or credentials
+npm test           # 157 tests (backend + frontend), no network or credentials
 npm run typecheck  # strict tsc across both workspaces
 npm run build      # production build of both halves
 ```
@@ -513,12 +512,12 @@ time or route egress through a filtering proxy.
 npm test
 ```
 
-151 tests, all offline, no credentials and no network.
+157 tests, all offline, no credentials and no network.
 
 ```bash
 npm test          # both suites
 npm run test:api  # 109 backend tests (vitest)
-npm run test:web  # 42 frontend tests (vitest + React Testing Library)
+npm run test:web  # 48 frontend tests (vitest + React Testing Library)
 ```
 
 ### Backend — 109 tests
@@ -537,11 +536,12 @@ npm run test:web  # 42 frontend tests (vitest + React Testing Library)
 The API tests run against an in-memory SQLite database with a stub chat provider,
 so the whole suite is deterministic.
 
-### Frontend — 42 tests
+### Frontend — 48 tests
 
 | File | Covers |
 | --- | --- |
 | `useAsk.test.ts` | answer state, scoping options, the abort-on-new-question race, network and validation failures |
+| `useHealth.test.ts` | connecting-vs-offline escalation, self-recovery once the server returns, re-check on revision change, no polling while healthy |
 | `useItems.test.ts` | first-page load, cursor pagination, cross-page de-duplication, poll-merge preserving later pages, optimistic delete and rollback |
 | `AddSourceForm.test.tsx` | note and URL submission, payload shape, field-level error display, deduplicated saves |
 | `AnswerCard.test.tsx` | citation chip rendering, unmatched markers, score formatting, collapsed retrieval internals, fallback warning |
@@ -551,9 +551,10 @@ Rather than mocking the API client, these stub `fetch` and route on the real URL
 the client builds. Query-string construction, status handling and error parsing
 stay inside the code under test instead of inside the mock.
 
-Two of these pin bugs that were found and fixed rather than imagined: the
-stale-answer race in `useAsk`, and a poll that discarded already-loaded
-pages in `useItems`.
+Three of these pin bugs that were found and fixed rather than imagined: the
+stale-answer race in `useAsk`, a poll that discarded already-loaded pages in
+`useItems`, and a health check that latched the UI into a permanent "API is
+not reachable" after one transient failure.
 
 **Not covered:** no end-to-end browser test. The flows were driven manually in a
 real browser, but a Playwright run against the built image would catch the

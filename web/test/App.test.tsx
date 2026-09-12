@@ -34,11 +34,16 @@ describe('App', () => {
     expect(await screen.findByText(/Running without a model provider/i)).toBeInTheDocument();
   });
 
-  it('tells the user plainly when the API is unreachable', async () => {
+  it('says it is connecting rather than broken while the API is not answering yet', async () => {
+    // A cold-starting host routinely misses its first request. Escalation to a
+    // hard error is covered in useHealth.test.ts; here we only care that the
+    // first failure does not immediately shout at the user.
     stubFetch({ 'GET *': () => Promise.reject(new TypeError('Failed to fetch')) });
 
     render(<App />);
-    expect(await screen.findByText(/The API is not reachable/i)).toBeInTheDocument();
+
+    expect(await screen.findByText(/Connecting to the API/i)).toBeInTheDocument();
+    expect(screen.queryByText(/not answering/i)).not.toBeInTheDocument();
   });
 
   it('asks a question and renders the cited answer', async () => {

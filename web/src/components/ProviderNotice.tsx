@@ -1,18 +1,30 @@
 import type { HealthResponse } from '../api/types';
+import type { HealthStatus } from '../hooks/useHealth';
 
 /**
- * Surfaces the two facts that otherwise only exist in server logs: which models
- * are wired up, and whether the API is reachable at all. Without this, running
- * with no API key looks like a broken app rather than a configured fallback.
+ * Surfaces the facts that otherwise only exist in server logs: which models are
+ * wired up, and whether the API is answering at all. Without this, running with
+ * no API key looks like a broken app rather than a configured fallback.
  */
-export function ProviderNotice({ health, isOffline }: { health: HealthResponse | null; isOffline: boolean }) {
-  if (isOffline) {
+export function ProviderNotice({ health, status }: { health: HealthResponse | null; status: HealthStatus }) {
+  // A server that has not answered yet is usually one that is waking up, not a
+  // broken one. Say nothing until useHealth has actually given up.
+  if (status === 'connecting') {
+    return health ? null : (
+      <div className="rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-600">
+        <p>Connecting to the API. A host that has been idle can take up to a minute to wake up.</p>
+      </div>
+    );
+  }
+
+  if (status === 'offline') {
     return (
       <div role="alert" className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-800 ring-1 ring-rose-200">
-        <p className="font-medium">The API is not reachable.</p>
+        <p className="font-medium">The API is not answering.</p>
         <p className="mt-0.5 text-xs">
-          Start it with <code className="rounded bg-rose-100 px-1">npm run dev</code> in <code>server/</code>, then
-          reload.
+          {isLocal()
+            ? 'Start it with `npm run dev` in server/, then reload.'
+            : 'It may be restarting or waking from idle. This retries on its own, so leave the page open.'}
         </p>
       </div>
     );
@@ -26,9 +38,13 @@ export function ProviderNotice({ health, isOffline }: { health: HealthResponse |
       <p className="mt-0.5 text-xs">
         Embeddings use the local hashed fallback and answers are extracted rather than generated. Set
         <code className="mx-1 rounded bg-amber-100 px-1">GEMINI_API_KEY</code>
-        (or <code className="mx-1 rounded bg-amber-100 px-1">OPENAI_API_KEY</code>) in <code>server/.env</code> and
-        restart for semantic search and synthesised answers.
+        (or <code className="mx-1 rounded bg-amber-100 px-1">OPENAI_API_KEY</code>) on the server and restart for
+        semantic search and synthesised answers.
       </p>
     </div>
   );
 }
+
+/** Localhost advice is actively misleading on a deployed site. */
+const isLocal = () =>
+  typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
